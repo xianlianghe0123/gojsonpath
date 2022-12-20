@@ -1,6 +1,7 @@
 package jsonpath
 
 import (
+	"bytes"
 	"encoding/json"
 	"github.com/xianlianghe0123/jsonpath/internal/ast"
 	"github.com/xianlianghe0123/jsonpath/internal/parser"
@@ -8,7 +9,7 @@ import (
 )
 
 type Compiled struct {
-	a ast.AST
+	a *ast.AST
 }
 
 func Compile(jsonPath string) (*Compiled, error) {
@@ -35,7 +36,9 @@ func (c *Compiled) Get(data interface{}) (interface{}, error) {
 
 func (c *Compiled) GetBytes(dataBytes []byte) (interface{}, error) {
 	var data interface{}
-	err := json.Unmarshal(dataBytes, &data)
+	d := json.NewDecoder(bytes.NewReader(dataBytes))
+	d.UseNumber()
+	err := d.Decode(&data)
 	if err != nil {
 		return nil, err
 	}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/xianlianghe0123/jsonpath/internal/ast"
 	"strconv"
+	"strings"
 	"sync"
 	"unicode"
 )
@@ -24,34 +25,6 @@ const (
 	doubleQuotes       = '"'
 )
 
-type Parser struct {
-	input  []rune
-	offset int
-	ast    ast.AST
-	err    error
-	once   sync.Once
-}
-
-func NewParser(jsonPath string) *Parser {
-	return &Parser{
-		input: []rune(jsonPath),
-		once:  sync.Once{},
-	}
-}
-
-func (s *Parser) Parse() (ast.AST, error) {
-	if s.err != nil {
-		return nil, s.err
-	}
-	if len(s.ast) == 0 {
-		s.err = s.parse()
-		if s.err != nil {
-			return nil, s.err
-		}
-	}
-	return s.ast, nil
-}
-
 var stateMachine = map[tokenType][]tokenType{
 	TokenStart:     {TokenRoot, TokenAll, TokenField},
 	TokenRoot:      {TokenDot, TokenRecursion, TokenSquare},
@@ -71,89 +44,131 @@ func transfer(from, to tokenType) bool {
 	return false
 }
 
-func (s *Parser) parse() error {
-	current := TokenStart
-	for s.offset < len(s.input) {
-		switch s.input[s.offset] {
-		case dot:
-			t, err := s.scanDots()
-			if err != nil {
-				return err
-			}
-			if !transfer(current, t.TokenType) {
-				return fmt.Errorf(`syntax error: unexpected token %s`, t.Value)
-			}
-			if t.TokenType == TokenRecursion {
-				s.ast = append(s.ast, ast.NewRecursion())
-			}
-			current = t.TokenType
-		case leftSquareBracket:
-			if !transfer(current, TokenSquare) {
-				return fmt.Errorf(`syntax error: unexpected token %s`, string(leftSquareBracket))
-			}
-			err := s.parseSquare()
-			if err != nil {
-				return err
-			}
-			current = TokenSquare
-		default:
-			t, err := s.scanField()
-			if err != nil {
-				return err
-			}
-			if !transfer(current, t.TokenType) {
-				return fmt.Errorf(`syntax error: unexpected token %s`, t.Value)
-			}
-			switch t.TokenType {
-			case TokenAll:
-				s.ast = append(s.ast, ast.NewAll())
-			case TokenField:
-				s.ast = append(s.ast, ast.NewSingleField(t.Value))
-			case TokenRoot:
-				s.ast = append(s.ast, ast.NewRoot())
-			}
-			current = t.TokenType
+type Parser struct {
+	input  []rune
+	offset int
+	status tokenType
+	ast    *ast.AST
+	err    error
+	once   sync.Once
+}
+
+func NewParser(jsonPath string) *Parser {
+	return &Parser{
+		input:  []rune(jsonPath),
+		offset: 0,
+		status: TokenStart,
+		ast:    nil,
+		err:    nil,
+		once:   sync.Once{},
+	}
+}
+
+func (p *Parser) Parse() (*ast.AST, error) {
+	p.once.Do(func() {
+		n, err := p.parse()
+		if err != nil {
+			p.err = err
+			return
 		}
-	}
-	return nil
+		p.ast = ast.NewAST(n)
+	})
+	return p.ast, p.err
 }
 
-func (s *Parser) pop(offset int) string {
-	t := s.offset
-	s.offset = offset
-	return string(s.input[t:offset])
+func (p *Parser) parse() (ast.Node, error) {
+	if p.offset == len(p.input) {
+		return ast.NewEnd(), nil
+	}
+	switch p.input[p.offset] {
+	case dot:
+		t, err := p.scanDots()
+		if err != nil {
+			return nil, err
+		}
+		if !transfer(p.status, t.TokenType) {
+			return nil, fmt.Errorf(`syntax error: unexpected token %s`, t.Value)
+		}
+		p.status = t.TokenType
+		n, err := p.parse()
+		if err != nil {
+			return nil, err
+		}
+		if t.TokenType == TokenRecursion {
+			return ast.NewRecursion(n), nil
+		}
+		return n, nil
+	case leftSquareBracket:
+		if !transfer(p.status, TokenSquare) {
+			return nil, fmt.Errorf(`syntax error: unexpected token %s`, string(leftSquareBracket))
+		}
+		p.status = TokenSquare
+		node, err := p.parseSquare()
+		if err != nil {
+			return nil, err
+		}
+		return node, err
+	default:
+		t, err := p.scanField()
+		if err != nil {
+			return nil, err
+		}
+		if !transfer(p.status, t.TokenType) {
+			return nil, fmt.Errorf(`syntax error: unexpected token %s`, t.Value)
+		}
+		p.status = t.TokenType
+		n, err := p.parse()
+		if err != nil {
+			return nil, err
+		}
+		switch t.TokenType {
+		case TokenAll:
+			return ast.NewAll(n), nil
+		case TokenField:
+			return ast.NewSingleField(t.Value, n), nil
+		case TokenRoot:
+			return ast.NewRoot(n), nil
+		}
+		return nil, fmt.Errorf("parser error")
+	}
 }
 
-func (s *Parser) scanDots() (*Token, error) {
-	off := s.offset + 1
-	for ; off < len(s.input) && s.input[off] == dot; off++ {
+func (p *Parser) pop(offset int) string {
+	t := p.offset
+	p.offset = offset
+	return string(p.input[t:offset])
+}
+
+func (p *Parser) scanDots() (*Token, error) {
+	off := p.offset + 1
+	for ; off < len(p.input) && p.input[off] == dot; off++ {
 	}
-	switch off - s.offset {
+	switch off - p.offset {
 	case 1:
 		return &Token{
 			TokenType: TokenDot,
-			Value:     s.pop(off),
+			Value:     p.pop(off),
 		}, nil
 	case 2:
 		return &Token{
 			TokenType: TokenRecursion,
-			Value:     s.pop(off),
+			Value:     p.pop(off),
 		}, nil
 	default:
-		return nil, fmt.Errorf(`syntax error near %q: unexpected token %s`, string(s.input[s.offset:]), string(s.input[s.offset:off]))
+		return nil, fmt.Errorf(`syntax error near %q: unexpected token %s`, string(p.input[p.offset:]), string(p.input[p.offset:off]))
 	}
 }
 
-func (s *Parser) scanField() (*Token, error) {
-	i := s.offset + 1
-	for ; i < len(s.input); i++ {
-		if s.input[i] == dot ||
-			s.input[i] == leftSquareBracket {
+func (p *Parser) scanField() (*Token, error) {
+	i := p.offset + 1
+	for ; i < len(p.input); i++ {
+		if p.input[i] == dot ||
+			p.input[i] == leftSquareBracket {
 			break
 		}
 	}
 	tokenType := TokenField
-	value := s.pop(i)
+	value := p.pop(i)
 	switch value {
 	case "$":
 		tokenType = TokenRoot
@@ -166,119 +181,131 @@ func (s *Parser) scanField() (*Token, error) {
 	}, nil
 }
 
-func (s *Parser) parseSquare() error {
-	s.offset++
-	if s.offset >= len(s.input) {
-		return fmt.Errorf("syntax err near %s", string(s.input[s.offset:]))
+func (p *Parser) parseSquare() (ast.Node, error) {
+	p.offset++
+	if p.offset >= len(p.input) {
+		return nil, fmt.Errorf("syntax err near %s", string(p.input[p.offset:]))
 	}
-	switch s.input[s.offset] {
+	switch p.input[p.offset] {
 	case singleQuotes, doubleQuotes:
-		node, err := s.parseFields()
+		node, err := p.parseFields()
 		if err != nil {
-			return err
+			return nil, err
 		}
-		s.ast = append(s.ast, node)
+		return node, nil
 	case colon, sub, '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-		node, err := s.parseIndexes()
+		node, err := p.parseIndexes()
 		if err != nil {
-			return err
+			return nil, err
 		}
-		s.ast = append(s.ast, node)
+		return node, nil
 	case star:
-		s.offset++
-		s.skipSpace()
-		if s.offset == len(s.input) || s.input[s.offset] != rightSquareBracket {
-			return fmt.Errorf("syntax err near %s", string(s.input[s.offset:]))
+		p.offset++
+		p.skipSpace()
+		if p.offset == len(p.input) || p.input[p.offset] != rightSquareBracket {
+			return nil, fmt.Errorf("syntax err near %s", string(p.input[p.offset:]))
 		}
-		s.ast = append(s.ast, ast.NewAll())
-		s.offset++
+		p.offset++
+		n, err := p.parse()
+		if err != nil {
+			return nil, err
+		}
+		return ast.NewAll(n), nil
 	default:
-		return fmt.Errorf("syntax err near %s: expected string or integer", string(s.input[s.offset:]))
-	}
-	return nil
-}
-
-func (s *Parser) skipSpace() {
-	for ; s.offset < len(s.input) && unicode.IsSpace(s.input[s.offset]); s.offset++ {
+		return nil, fmt.Errorf("syntax err near %s: expected string or integer", string(p.input[p.offset:]))
 	}
 }
 
-func (s *Parser) parseFields() (ast.Node, error) {
+func (p *Parser) skipSpace() {
+	for ; p.offset < len(p.input) && unicode.IsSpace(p.input[p.offset]); p.offset++ {
+	}
+}
+
+func (p *Parser) parseFields() (ast.Node, error) {
 	fields := make([]string, 0, 1)
 	for {
-		str, err := s.scanString()
+		str, err := p.scanString()
 		if err != nil {
 			return nil, err
 		}
 		fields = append(fields, str)
-		if s.offset == len(s.input) {
-			return nil, fmt.Errorf("syntax err near %s: could not found ]", string(s.input[s.offset:]))
+		if p.offset == len(p.input) {
+			return nil, fmt.Errorf("syntax err near %s: could not found ]", string(p.input[p.offset:]))
 		}
-		s.skipSpace()
-		if s.input[s.offset] == rightSquareBracket {
-			s.offset++
+		p.skipSpace()
+		if p.input[p.offset] == rightSquareBracket {
+			p.offset++
 			break
 		}
-		if s.input[s.offset] != comma {
-			return nil, fmt.Errorf("syntax err near %s", string(s.input[s.offset:]))
+		if p.input[p.offset] != comma {
+			return nil, fmt.Errorf("syntax err near %s", string(p.input[p.offset:]))
 		}
-		s.offset++
-		s.skipSpace()
+		p.offset++
+		p.skipSpace()
+	}
+	n, err := p.parse()
+	if err != nil {
+		return nil, err
 	}
 	if len(fields) > 1 {
-		return ast.NewMultiFields(fields...), nil
+		return ast.NewMultiFields(fields, n), nil
 	}
-	return ast.NewSingleField(fields[0]), nil
+	return ast.NewSingleField(fields[0], n), nil
 }
 
-func (s *Parser) scanString() (string, error) {
-	if s.input[s.offset] != singleQuotes && s.input[s.offset] != doubleQuotes {
-		return "", fmt.Errorf(`syntax error near %q: could not find quotes`, string(s.input[s.offset:]))
+func (p *Parser) scanString() (string, error) {
+	if p.input[p.offset] != singleQuotes && p.input[p.offset] != doubleQuotes {
+		return "", fmt.Errorf(`syntax error near %q: could not find quotes`, string(p.input[p.offset:]))
 	}
 	result := make([]rune, 0)
-	i := s.offset + 1
-	for ; i < len(s.input) && s.input[i] != s.input[s.offset]; i++ {
-		if s.input[i] == '\\' {
+	i := p.offset + 1
+	for ; i < len(p.input) && p.input[i] != p.input[p.offset]; i++ {
+		if p.input[i] == '\\' {
 			i++
 		}
-		result = append(result, s.input[i])
+		result = append(result, p.input[i])
 	}
-	if i == len(s.input) {
-		return "", fmt.Errorf(`syntax error near %q: unmatched quotes`, string(s.input[s.offset:]))
+	if i == len(p.input) {
+		return "", fmt.Errorf(`syntax error near %q: unmatched quotes`, string(p.input[p.offset:]))
 	}
-	s.offset = i + 1
+	p.offset = i + 1
 	return string(result), nil
 }
 
-func (s *Parser) parseIndexes() (ast.Node, error) {
-	nodes := make([]ast.Node, 0, 1)
-	slice := make([]int, 0, 3)
-	isSlice := false
-	for {
-		s.skipSpace()
+type indexesData struct {
+	isSlice bool
+	index   int
+	start   int
+	end     int
+	step    int
+}
+
+func (p *Parser) parseIndexes() (ast.Node, error) {
+	data := make([]*indexesData, 0, 1)
+	for slice := make([]int, 0, 3); ; {
+		p.skipSpace()
 		integer := 0
-		if s.input[s.offset] != colon && s.input[s.offset] != rightSquareBracket {
+		if !strings.ContainsRune(":,]", p.input[p.offset]) {
 			var err error
-			integer, err = s.scanInteger()
+			integer, err = p.scanInteger()
 			if err != nil {
 				return nil, err
 			}
 		}
 		if len(slice) == 3 {
-			return nil, fmt.Errorf(`syntax error near %q`, string(s.input[s.offset:]))
+			return nil, fmt.Errorf(`syntax error near %q`, string(p.input[p.offset:]))
 		}
 		slice = append(slice, integer)
-		if s.offset == len(s.input) {
-			return nil, fmt.Errorf("syntax err near %q : could not found ]", string(s.input[s.offset:]))
+		if p.offset == len(p.input) {
+			return nil, fmt.Errorf("syntax err near %q : could not found ]", string(p.input[p.offset:]))
 		}
-		s.skipSpace()
-		s.offset++
-		switch s.input[s.offset-1] {
+		p.skipSpace()
+		p.offset++
+		switch p.input[p.offset-1] {
 		case colon:
-			isSlice = true
 		case comma, rightSquareBracket:
-			if !isSlice {
-				nodes = append(nodes, ast.NewIndexField(slice[0]))
+			if len(slice) == 1 {
+				data = append(data, &indexesData{isSlice: false, index: slice[0]})
 			} else {
 				end, step := 0, 0
 				if len(slice) > 1 {
@@ -287,32 +314,43 @@ func (s *Parser) parseIndexes() (ast.Node, error) {
 						step = slice[2]
 					}
 				}
-				nodes = append(nodes, ast.NewSliceField(slice[0], end, step))
+				data = append(data, &indexesData{isSlice: true, start: slice[0], end: end, step: step})
 			}
 			slice = slice[:0]
-			isSlice = false
-			if s.input[s.offset-1] == rightSquareBracket {
+			if p.input[p.offset-1] == rightSquareBracket {
 				goto exit
 			}
 		default:
-			return nil, fmt.Errorf("syntax err near %s", string(s.input[s.offset:]))
+			return nil, fmt.Errorf("syntax err near %s", string(p.input[p.offset:]))
 		}
 	}
 exit:
-	if _, ok := nodes[0].(*ast.IndexField); ok && len(nodes) == 1 {
+	n, err := p.parse()
+	if err != nil {
+		return nil, err
+	}
+	nodes := make([]ast.Node, 0, len(data))
+	for _, d := range data {
+		if !d.isSlice {
+			nodes = append(nodes, ast.NewIndexField(d.index, n))
+		} else {
+			nodes = append(nodes, ast.NewSlice(d.start, d.end, d.step, n))
+		}
+	}
+	if len(nodes) == 1 {
 		return nodes[0], nil
 	}
-	return ast.NewIndexesField(nodes...), nil
+	return ast.NewIndexes(nodes), nil
 }
 
-func (s *Parser) scanInteger() (int, error) {
-	off := s.offset + 1
-	for ; off < len(s.input) && unicode.IsNumber(s.input[off]); off++ {
+func (p *Parser) scanInteger() (int, error) {
+	off := p.offset + 1
+	for ; off < len(p.input) && unicode.IsNumber(p.input[off]); off++ {
 	}
-	integer, err := strconv.Atoi(string(s.input[s.offset:off]))
+	integer, err := strconv.Atoi(string(p.input[p.offset:off]))
 	if err != nil {
-		return 0, fmt.Errorf(`syntax error near %q: could not parse integer`, string(s.input[s.offset:]))
+		return 0, fmt.Errorf(`syntax error near %q: could not parse integer`, string(p.input[p.offset:]))
 	}
-	s.offset = off
+	p.offset = off
 	return integer, nil
 }

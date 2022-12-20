@@ -5,42 +5,36 @@ import (
 	"reflect"
 )
 
-type IndexField struct {
-	Index int
+type Index struct {
+	index int
+	next  Node
 }
 
-func NewIndexField(index int) *IndexField {
-	return &IndexField{
-		Index: index,
+func NewIndexField(index int, next Node) *Index {
+	return &Index{
+		index: index,
+		next:  next,
 	}
 }
 
-func (i *IndexField) String() string {
-	return fmt.Sprintf("[%d]", i.Index)
+func (i *Index) String() string {
+	return fmt.Sprintf("[%d]%s", i.index, i.next.String())
 }
 
-func (i *IndexField) SingleResult() bool {
-	return true
-}
-
-func (i *IndexField) Get(data interface{}) (interface{}, error) {
+func (i *Index) Get(data interface{}) (*Result, error) {
 	value := reflect.ValueOf(data)
 	for value.Type().Kind() == reflect.Ptr {
 		if value.IsNil() {
-			return nil, i.errNotFound()
+			return nil, fmt.Errorf("index %d not found", i.index)
 		}
 		value = value.Elem()
 	}
 	if value.Kind() != reflect.Array && value.Kind() != reflect.Slice {
-		return nil, i.errNotFound()
+		return nil, fmt.Errorf("could not get index %d of type %s", i.index, value.Kind())
 	}
-	idx := (i.Index + value.Len()) % value.Len()
+	idx := (i.index + value.Len()) % value.Len()
 	if idx < 0 || idx >= value.Len() {
-		return nil, i.errNotFound()
+		return nil, fmt.Errorf("index %d not found", i.index)
 	}
-	return value.Index(idx).Interface(), nil
-}
-
-func (i *IndexField) errNotFound() error {
-	return fmt.Errorf("%d not found", i.Index)
+	return i.next.Get(value.Index(idx).Interface())
 }

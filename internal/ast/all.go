@@ -5,21 +5,32 @@ import (
 	"reflect"
 )
 
-type All struct{}
+type All struct {
+	next Node
+}
 
-func NewAll() *All {
-	return &All{}
+func NewAll(next Node) *All {
+	return &All{
+		next: next,
+	}
 }
 
 func (a *All) String() string {
-	return "[*]"
+	return fmt.Sprintf("[*]%s", a.next.String())
 }
 
-func (a *All) SingleResult() bool {
-	return false
+func (a *All) Get(r interface{}) (*Result, error) {
+	r, err := a.get(r)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{
+		data:  r,
+		multi: true,
+	}, nil
 }
 
-func (a *All) Get(data interface{}) (interface{}, error) {
+func (a *All) get(data interface{}) ([]interface{}, error) {
 	value := reflect.ValueOf(data)
 	for value.Type().Kind() == reflect.Ptr {
 		if value.IsNil() {
@@ -44,7 +55,15 @@ func (a *All) getMap(value reflect.Value) ([]interface{}, error) {
 	result := make([]interface{}, 0, value.Len())
 	iter := value.MapRange()
 	for iter.Next() {
-		result = append(result, iter.Value().Interface())
+		r, err := a.next.Get(iter.Value().Interface())
+		if err != nil {
+			continue
+		}
+		if r.multi {
+			result = append(result, r.data.([]interface{})...)
+		} else {
+			result = append(result, r.data)
+		}
 	}
 	return result, nil
 }
@@ -56,7 +75,15 @@ func (a *All) getStruct(value reflect.Value) ([]interface{}, error) {
 		if omitempty && value.Field(i).IsZero() {
 			continue
 		}
-		result = append(result, value.Field(i).Interface())
+		r, err := a.next.Get(value.Field(i).Interface())
+		if err != nil {
+			continue
+		}
+		if r.multi {
+			result = append(result, r.data.([]interface{})...)
+		} else {
+			result = append(result, r.data)
+		}
 	}
 	if len(result) == 0 {
 		return nil, fmt.Errorf("empty struct")
@@ -70,7 +97,15 @@ func (a *All) getArray(value reflect.Value) ([]interface{}, error) {
 	}
 	result := make([]interface{}, 0, value.Len())
 	for i := 0; i < value.Len(); i++ {
-		result = append(result, value.Index(i).Interface())
+		r, err := a.next.Get(value.Index(i).Interface())
+		if err != nil {
+			continue
+		}
+		if r.multi {
+			result = append(result, r.data.([]interface{})...)
+		} else {
+			result = append(result, r.data)
+		}
 	}
 	return result, nil
 }

@@ -7,24 +7,22 @@ import (
 )
 
 type SingleField struct {
-	Field string
+	field string
+	next  Node
 }
 
-func NewSingleField(field string) *SingleField {
+func NewSingleField(field string, next Node) *SingleField {
 	return &SingleField{
-		Field: field,
+		field: field,
+		next:  next,
 	}
 }
 
 func (s *SingleField) String() string {
-	return fmt.Sprintf("[%q]", s.Field)
+	return fmt.Sprintf("[%q]%s", s.field, s.next.String())
 }
 
-func (s *SingleField) SingleResult() bool {
-	return true
-}
-
-func (s *SingleField) Get(data interface{}) (interface{}, error) {
+func (s *SingleField) Get(data interface{}) (*Result, error) {
 	value := reflect.ValueOf(data)
 	for value.Type().Kind() == reflect.Ptr {
 		if value.IsNil() {
@@ -38,19 +36,19 @@ func (s *SingleField) Get(data interface{}) (interface{}, error) {
 	case reflect.Struct:
 		return s.getStruct(value)
 	default:
-		return nil, fmt.Errorf("unsupported get field %s from %s", s.Field, value.Type().Kind())
+		return nil, fmt.Errorf("unsupported get field %s from %s", s.field, value.Type().Kind())
 	}
 }
 
 func (s *SingleField) errNotFound() error {
-	return fmt.Errorf("%s not found", s.Field)
+	return fmt.Errorf("%s not found", s.field)
 }
 
-func (s *SingleField) getMap(value reflect.Value) (interface{}, error) {
-	key := reflect.ValueOf(s.Field)
+func (s *SingleField) getMap(value reflect.Value) (*Result, error) {
+	key := reflect.ValueOf(s.field)
 	switch t := value.Type().Key().Kind(); t {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		i, err := strconv.ParseInt(s.Field, 10, 64)
+		i, err := strconv.ParseInt(s.field, 10, 64)
 		if err != nil {
 			return nil, s.errNotFound()
 		}
@@ -65,10 +63,9 @@ func (s *SingleField) getMap(value reflect.Value) (interface{}, error) {
 			key = reflect.ValueOf(int32(i))
 		case reflect.Int64:
 			key = reflect.ValueOf(i)
-
 		}
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		u, err := strconv.ParseUint(s.Field, 10, 64)
+		u, err := strconv.ParseUint(s.field, 10, 64)
 		if err != nil {
 			return nil, s.errNotFound()
 		}
@@ -85,7 +82,7 @@ func (s *SingleField) getMap(value reflect.Value) (interface{}, error) {
 			key = reflect.ValueOf(u)
 		}
 	case reflect.Float32, reflect.Float64:
-		float, err := strconv.ParseFloat(s.Field, 64)
+		float, err := strconv.ParseFloat(s.field, 64)
 		if err != nil {
 			return nil, s.errNotFound()
 		}
@@ -96,7 +93,7 @@ func (s *SingleField) getMap(value reflect.Value) (interface{}, error) {
 			key = reflect.ValueOf(float)
 		}
 	case reflect.Bool:
-		b, err := strconv.ParseBool(s.Field)
+		b, err := strconv.ParseBool(s.field)
 		if err != nil {
 			return nil, s.errNotFound()
 		}
@@ -109,19 +106,19 @@ func (s *SingleField) getMap(value reflect.Value) (interface{}, error) {
 	if !v.IsValid() {
 		return nil, s.errNotFound()
 	}
-	return v.Interface(), nil
+	return s.next.Get(v.Interface())
 }
 
-func (s *SingleField) getStruct(value reflect.Value) (interface{}, error) {
+func (s *SingleField) getStruct(value reflect.Value) (*Result, error) {
 	for i := 0; i < value.NumField(); i++ {
 		key, omitempty := getFieldKey(value.Type().Field(i))
-		if key != s.Field {
+		if key != s.field {
 			continue
 		}
 		if omitempty && value.IsZero() {
 			break
 		}
-		return value.Field(i).Interface(), nil
+		return s.next.Get(value.Field(i).Interface())
 	}
 	return nil, s.errNotFound()
 }

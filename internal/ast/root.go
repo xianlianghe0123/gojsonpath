@@ -1,19 +1,21 @@
 package ast
 
-type Root struct{}
+import "fmt"
 
-func NewRoot() *Root {
-	return &Root{}
+type Root struct {
+	next Node
+}
+
+func NewRoot(next Node) *Root {
+	return &Root{
+		next: next,
+	}
 }
 
 func (r *Root) String() string {
-	return "$"
+	return fmt.Sprintf("$%s", r.next.String())
 }
 
-func (r *Root) SingleResult() bool {
-	return true
-}
-
-func (r *Root) Get(data interface{}) (interface{}, error) {
-	return data, nil
+func (r *Root) Get(data interface{}) (*Result, error) {
+	return r.next.Get(data)
 }
