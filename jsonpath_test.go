@@ -1,7 +1,10 @@
 package jsonpath
 
 import (
+	"bytes"
 	"encoding/json"
+	"io"
+	"os"
 	"reflect"
 	"testing"
 )
@@ -89,6 +92,30 @@ func TestGet(t *testing.T) {
 		if !reflect.DeepEqual(cur, e) {
 			t.Errorf("Case %q, current:%s, expectation:%s\n", c.jsonPath, string(b), c.expectation)
 		}
+	}
+}
 
+func BenchmarkGet(b *testing.B) {
+	f, err := os.Open("data/big_data.json")
+	if err != nil {
+		b.Fatalf("open file %+v", err)
+	}
+	defer f.Close()
+	bb, err := io.ReadAll(f)
+	if err != nil {
+		b.Fatalf("read file %+v", err)
+	}
+	var data interface{}
+	d := json.NewDecoder(bytes.NewReader(bb))
+	d.UseNumber()
+	err = d.Decode(&data)
+	if err != nil {
+		b.Fatalf("unmarshal %+v", err)
+	}
+	for i := 0; i < b.N; i++ {
+		_, err := Get(`$..*`, data)
+		if err != nil {
+			b.Fatalf("%+v\n", err)
+		}
 	}
 }

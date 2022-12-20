@@ -1,54 +1,39 @@
 package ast
 
-import (
-	"strings"
-)
+type Result struct {
+	data  interface{}
+	multi bool
+}
 
 type Node interface {
-	Get(interface{}) (interface{}, error)
-	SingleResult() bool
+	Get(interface{}) (*Result, error)
 	String() string
 }
 
-type AST []Node
-
-func (a AST) String() string {
-	builder := strings.Builder{}
-	for _, n := range a {
-		builder.WriteString(n.String())
-	}
-	return builder.String()
+type AST struct {
+	node Node
 }
 
-func (a AST) Get(data interface{}) (interface{}, error) {
-	var err error
-	single := true
-	for _, t := range a {
-		if single {
-			data, err = t.Get(data)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			array, ok := data.([]interface{})
-			if !ok {
-				continue
-			}
-			elems := make([]interface{}, 0, len(array))
-			for j := range array {
-				elem, err := t.Get(array[j])
-				if err != nil {
-					continue
-				}
-				if t.SingleResult() {
-					elems = append(elems, elem)
-					continue
-				}
-				elems = append(elems, elem.([]interface{})...)
-			}
-			data = elems
-		}
-		single = single && t.SingleResult()
+func NewAST(node Node) *AST {
+	return &AST{
+		node: node,
 	}
-	return data, nil
+}
+
+func (a *AST) String() string {
+	if a.node == nil {
+		return ""
+	}
+	return a.node.String()
+}
+
+func (a *AST) Get(data interface{}) (interface{}, error) {
+	if a.node == nil {
+		return data, nil
+	}
+	result, err := a.node.Get(data)
+	if err != nil {
+		return nil, err
+	}
+	return result.data, nil
 }

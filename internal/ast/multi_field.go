@@ -7,33 +7,43 @@ import (
 )
 
 type MultiFields struct {
-	Fields []string
+	fields []string
+	next   Node
 }
 
-func NewMultiFields(fields ...string) *MultiFields {
+func NewMultiFields(fields []string, next Node) *MultiFields {
 	return &MultiFields{
-		Fields: fields,
+		fields: fields,
+		next:   next,
 	}
 }
 
 func (m *MultiFields) String() string {
 	builder := strings.Builder{}
 	builder.WriteRune('[')
-	for i, f := range m.Fields {
+	for i, f := range m.fields {
 		builder.WriteString(fmt.Sprintf("%q", f))
-		if i < len(m.Fields)-1 {
+		if i < len(m.fields)-1 {
 			builder.WriteRune(',')
 		}
 	}
 	builder.WriteRune(']')
+	builder.WriteString(m.next.String())
 	return builder.String()
 }
 
-func (m *MultiFields) SingleResult() bool {
-	return false
+func (m *MultiFields) Get(data interface{}) (*Result, error) {
+	r, err := m.get(data)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{
+		data:  r,
+		multi: true,
+	}, nil
 }
 
-func (m *MultiFields) Get(data interface{}) (interface{}, error) {
+func (m *MultiFields) get(data interface{}) ([]interface{}, error) {
 	value := reflect.ValueOf(data)
 	for value.Type().Kind() == reflect.Ptr {
 		if value.IsNil() {
@@ -41,31 +51,27 @@ func (m *MultiFields) Get(data interface{}) (interface{}, error) {
 		}
 		value = value.Elem()
 	}
-	var (
-		result []interface{}
-		err    error
-	)
 	switch value.Kind() {
 	case reflect.Map, reflect.Struct:
-		result, err = m.getObject(value)
+		return m.getObject(value)
 	default:
 		return nil, fmt.Errorf("unsupported get field %s from %s", m, value.Type().Kind())
 	}
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
 }
 
 func (m *MultiFields) getObject(value reflect.Value) ([]interface{}, error) {
 	data := value.Interface()
-	result := make([]interface{}, 0, len(m.Fields))
-	for _, field := range m.Fields {
-		v, err := NewSingleField(field).Get(data)
+	result := make([]interface{}, 0, len(m.fields))
+	for _, field := range m.fields {
+		r, err := NewSingleField(field, m.next).Get(data)
 		if err != nil {
 			continue
 		}
-		result = append(result, v)
+		if r.multi {
+			result = append(result, r.data.([]interface{})...)
+		} else {
+			result = append(result, r.data)
+		}
 	}
 	return result, nil
 }

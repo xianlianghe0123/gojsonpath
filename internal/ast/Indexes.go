@@ -1,24 +1,24 @@
 package ast
 
-import "strings"
+import (
+	"strings"
+)
 
-type IndexesField struct {
+type Indexes struct {
 	nodes []Node
 }
 
-func NewIndexesField(nodes ...Node) *IndexesField {
-	return &IndexesField{
+func NewIndexes(nodes []Node) *Indexes {
+	return &Indexes{
 		nodes: nodes,
 	}
 }
 
-func (i *IndexesField) String() string {
+func (i *Indexes) String() string {
 	builder := strings.Builder{}
 	builder.WriteRune('[')
 	for j, node := range i.nodes {
-		t := node.String()
-		t = t[1 : len(t)-1]
-		builder.WriteString(t)
+		builder.WriteString(strings.SplitN(node.String(), "]", 2)[0][1:])
 		if j < len(i.nodes)-1 {
 			builder.WriteRune(',')
 		}
@@ -27,23 +27,29 @@ func (i *IndexesField) String() string {
 	return builder.String()
 }
 
-func (i *IndexesField) SingleResult() bool {
-	return false
+func (i *Indexes) Get(data interface{}) (*Result, error) {
+	r, err := i.get(data)
+	if err != nil {
+		return nil, err
+	}
+	return &Result{
+		data:  r,
+		multi: true,
+	}, nil
 }
 
-func (i *IndexesField) Get(data interface{}) (interface{}, error) {
+func (i *Indexes) get(data interface{}) ([]interface{}, error) {
 	result := make([]interface{}, 0)
 	for _, n := range i.nodes {
 		r, err := n.Get(data)
 		if err != nil {
 			continue
 		}
-		if n.SingleResult() {
-			result = append(result, r)
+		if r.multi {
+			result = append(result, r.data.([]interface{})...)
 		} else {
-			result = append(result, r.([]interface{})...)
+			result = append(result, r.data)
 		}
-
 	}
 	return result, nil
 }

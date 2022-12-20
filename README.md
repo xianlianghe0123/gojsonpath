@@ -1,31 +1,28 @@
 # jsonpath
-------------
 Introduction: https://goessner.net/articles/JsonPath/
 
 
 ## Syntax Support
--------------------
-|         JSONPath         | Description             | Support |
-|:------------------------:|:------------------------|:-------:|
-|           `$`            | return root             |    ✅    |
-|           `.`            | child                   |    ✅    |
-|           `..`           | recursive               |    ✅    |
-|       `*` or `[*]`       | all                     |    ✅    |
-|          `[0]`           | index                   |    ✅    |
-|          `[-1]`          | negative index          |    ✅    |
-|    `[start:end:step]`    | slice                   |    ✅    |
-| `[start:end:step,0,...]` | compose index and slice |    ✅    |
-| `['field'] or ["field"]` | compose index and slice |    ✅    |
-|     `['field1',...]`     | multi fields            |    ✅    |
-|         `[?()]`          | filter                  |    ❌    |
-|          `[()]`          | script expression       |    ❌    |
+|         JSONPath         | Description            | Support |
+|:------------------------:|:-----------------------|:-------:|
+|           `$`            | return root            |    ✅    |
+|           `.`            | child                  |    ✅    |
+|           `..`           | recursive              |    ✅    |
+|       `*` or `[*]`       | all                    |    ✅    |
+|          `[0]`           | index                  |    ✅    |
+|          `[-1]`          | negative index         |    ✅    |
+|    `[start:end:step]`    | slice                  |    ✅    |
+| `[start:end:step,0,...]` | union: index and slice |    ✅    |
+| `['field'] or ["field"]` | field                  |    ✅    |
+|     `['field1',...]`     | union: fields          |    ✅    |
+|         `[?()]`          | filter                 |    ❌    |
+|          `[()]`          | script expression      |    ❌    |
 
 `*` or `..` order:
 - `map`：random order (depend `reflect.MapRange`)
 - `struct`：order by struct fields defined order
 
 ## Example
-------------
 ```json
 {
   "store": {
