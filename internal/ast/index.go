@@ -23,7 +23,7 @@ func (i *Index) String() string {
 
 func (i *Index) Get(data interface{}) (*Result, error) {
 	value := reflect.ValueOf(data)
-	for value.Type().Kind() == reflect.Ptr {
+	for value.Kind() == reflect.Ptr {
 		if value.IsNil() {
 			return nil, fmt.Errorf("index %d not found", i.index)
 		}

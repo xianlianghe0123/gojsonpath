@@ -45,7 +45,7 @@ func (m *MultiFields) Get(data interface{}) (*Result, error) {
 
 func (m *MultiFields) get(data interface{}) ([]interface{}, error) {
 	value := reflect.ValueOf(data)
-	for value.Type().Kind() == reflect.Ptr {
+	for value.Kind() == reflect.Ptr {
 		if value.IsNil() {
 			return nil, fmt.Errorf("can not find %s from nil", m)
 		}
@@ -55,7 +55,7 @@ func (m *MultiFields) get(data interface{}) ([]interface{}, error) {
 	case reflect.Map, reflect.Struct:
 		return m.getObject(value)
 	default:
-		return nil, fmt.Errorf("unsupported get field %s from %s", m, value.Type().Kind())
+		return nil, fmt.Errorf("unsupported get field %s from %s", m, value.Kind())
 	}
 }
 

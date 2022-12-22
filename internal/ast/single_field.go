@@ -24,7 +24,7 @@ func (s *SingleField) String() string {
 
 func (s *SingleField) Get(data interface{}) (*Result, error) {
 	value := reflect.ValueOf(data)
-	for value.Type().Kind() == reflect.Ptr {
+	for value.Kind() == reflect.Ptr {
 		if value.IsNil() {
 			return nil, s.errNotFound()
 		}
@@ -36,7 +36,7 @@ func (s *SingleField) Get(data interface{}) (*Result, error) {
 	case reflect.Struct:
 		return s.getStruct(value)
 	default:
-		return nil, fmt.Errorf("unsupported get field %s from %s", s.field, value.Type().Kind())
+		return nil, fmt.Errorf("unsupported get field %s from %s", s.field, value.Kind())
 	}
 }
 

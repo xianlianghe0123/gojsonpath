@@ -32,7 +32,7 @@ func (a *All) Get(r interface{}) (*Result, error) {
 
 func (a *All) get(data interface{}) ([]interface{}, error) {
 	value := reflect.ValueOf(data)
-	for value.Type().Kind() == reflect.Ptr {
+	for value.Kind() == reflect.Ptr {
 		if value.IsNil() {
 			return nil, fmt.Errorf("can not find * from nil")
 		}
@@ -47,7 +47,7 @@ func (a *All) get(data interface{}) ([]interface{}, error) {
 	case reflect.Slice, reflect.Array:
 		return a.getArray(value)
 	default:
-		return nil, fmt.Errorf("unsupported find * from %s", value.Type().Kind())
+		return nil, fmt.Errorf("unsupported find * from %s", value.Kind())
 	}
 }
 

@@ -32,14 +32,14 @@ func (r *Recursion) Get(data interface{}) (*Result, error) {
 }
 
 func (r *Recursion) get(value reflect.Value, result []interface{}) ([]interface{}, error) {
-	for value.Type().Kind() == reflect.Ptr {
+	for value.Kind() == reflect.Ptr {
 		if value.IsNil() {
 			return nil, nil
 		}
 		value = value.Elem()
 	}
 
-	switch value.Type().Kind() {
+	switch value.Kind() {
 	case reflect.Bool,
 		reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
 		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64,
@@ -57,7 +57,7 @@ func (r *Recursion) get(value reflect.Value, result []interface{}) ([]interface{
 	case reflect.Interface:
 		return r.get(reflect.ValueOf(value.Interface()), result)
 	default:
-		return nil, fmt.Errorf("unsupported get field %s from %s", r, value.Type().Kind().String())
+		return nil, fmt.Errorf("unsupported get field %s from %s", r, value.Kind().String())
 	}
 }
 
