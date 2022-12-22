@@ -20,17 +20,18 @@ func (r *Recursion) String() string {
 }
 
 func (r *Recursion) Get(data interface{}) (*Result, error) {
-	re, err := r.get(reflect.ValueOf(data))
+	result := make([]interface{}, 0)
+	result, err := r.get(reflect.ValueOf(data), result)
 	if err != nil {
 		return nil, err
 	}
 	return &Result{
-		data:  re,
+		data:  result,
 		multi: true,
 	}, nil
 }
 
-func (r *Recursion) get(value reflect.Value) ([]interface{}, error) {
+func (r *Recursion) get(value reflect.Value, result []interface{}) ([]interface{}, error) {
 	for value.Type().Kind() == reflect.Ptr {
 		if value.IsNil() {
 			return nil, nil
@@ -46,30 +47,21 @@ func (r *Recursion) get(value reflect.Value) ([]interface{}, error) {
 		reflect.Float32, reflect.Float64,
 		reflect.Complex64, reflect.Complex128,
 		reflect.String:
-		result, err := r.next.Get(value.Interface())
-		if err != nil {
-			return []interface{}{}, nil
-		}
-		if result.multi {
-			return result.data.([]interface{}), nil
-		} else {
-			return []interface{}{result.data}, nil
-		}
+		return result, nil
 	case reflect.Array, reflect.Slice:
-		return r.getArray(value), nil
+		return r.getArray(value, result), nil
 	case reflect.Map:
-		return r.getMap(value), nil
+		return r.getMap(value, result), nil
 	case reflect.Struct:
-		return r.getStruct(value), nil
+		return r.getStruct(value, result), nil
 	case reflect.Interface:
-		return r.get(reflect.ValueOf(value.Interface()))
+		return r.get(reflect.ValueOf(value.Interface()), result)
 	default:
 		return nil, fmt.Errorf("unsupported get field %s from %s", r, value.Type().Kind().String())
 	}
 }
 
-func (r *Recursion) getMap(value reflect.Value) []interface{} {
-	result := make([]interface{}, 0, value.Len()+1)
+func (r *Recursion) getMap(value reflect.Value, result []interface{}) []interface{} {
 	t, err := r.next.Get(value.Interface())
 	if err == nil {
 		if t.multi {
@@ -80,14 +72,16 @@ func (r *Recursion) getMap(value reflect.Value) []interface{} {
 	}
 	iter := value.MapRange()
 	for iter.Next() {
-		e, _ := r.get(iter.Value())
-		result = append(result, e...)
+		r, err := r.get(iter.Value(), result)
+		if err != nil {
+			continue
+		}
+		result = r
 	}
 	return result
 }
 
-func (r *Recursion) getStruct(value reflect.Value) []interface{} {
-	result := make([]interface{}, 0, value.NumField()+1)
+func (r *Recursion) getStruct(value reflect.Value, result []interface{}) []interface{} {
 	t, err := r.next.Get(value.Interface())
 	if err == nil {
 		if t.multi {
@@ -101,17 +95,16 @@ func (r *Recursion) getStruct(value reflect.Value) []interface{} {
 		if omitempty && value.Field(i).IsZero() {
 			continue
 		}
-		e, err := r.get(value.Field(i))
+		r, err := r.get(value.Field(i), result)
 		if err != nil {
 			continue
 		}
-		result = append(result, e...)
+		result = r
 	}
 	return result
 }
 
-func (r *Recursion) getArray(value reflect.Value) []interface{} {
-	result := make([]interface{}, 0, value.Len()+1)
+func (r *Recursion) getArray(value reflect.Value, result []interface{}) []interface{} {
 	t, err := r.next.Get(value.Interface())
 	if err == nil {
 		if t.multi {
@@ -121,9 +114,11 @@ func (r *Recursion) getArray(value reflect.Value) []interface{} {
 		}
 	}
 	for i := 0; i < value.Len(); i++ {
-		e, _ := r.get(value.Index(i))
-		result = append(result, e...)
-
+		r, err := r.get(value.Index(i), result)
+		if err != nil {
+			continue
+		}
+		result = r
 	}
 	return result
 }
